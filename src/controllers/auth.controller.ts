@@ -20,8 +20,8 @@ export async function login(req: Request, res: Response, next: NextFunction) {
 
     res.cookie(env.cookieName, result.refreshToken, {
       httpOnly: true,
-      sameSite: "lax",
-      secure: env.nodeEnv === "production",
+      secure: true,
+      sameSite: "none",
       path: "/api/auth/refresh",
     });
 
