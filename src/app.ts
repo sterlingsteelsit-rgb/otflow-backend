@@ -3,7 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { corsOptions } from "./configs/cors.js";
-import { apiRouter } from "./routes";
+import { apiRouter } from "./routes/index.js";
 import { errorMiddleware } from "./middleware/error.middleware.js";
 
 export function createApp() {
