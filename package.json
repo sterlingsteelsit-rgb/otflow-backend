@@ -8,6 +8,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
+    "postinstall": "npm run build",
     "seed": "tsx src/seed.ts",
     "seed:employees": "tsx src/seeds/seed-employees.ts",
     "seed:ot": "tsx src/seeds/seed-ot-entries.ts"
