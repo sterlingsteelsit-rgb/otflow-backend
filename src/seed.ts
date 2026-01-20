@@ -1,10 +1,10 @@
-import { connectDb } from "./configs/db";
-import { env } from "./configs/env";
-import { Role } from "./models/role.model";
-import { User } from "./models/user.model";
-import { hashPassword } from "./utils/password";
-import { PERMISSIONS } from "./utils/permissions";
-import { logger } from "./configs/logger";
+import { connectDb } from "./configs/db.js";
+import { env } from "./configs/env.js";
+import { Role } from "./models/role.model.js";
+import { User } from "./models/user.model.js";
+import { hashPassword } from "./utils/password.js";
+import { PERMISSIONS } from "./utils/permissions.js";
+import { logger } from "./configs/logger.js";
 
 async function seed() {
   await connectDb();
