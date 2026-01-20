@@ -179,8 +179,8 @@ export async function updateOt(params: {
     : calcOtMinutes({
         workDate,
         shift: next.shift,
-        inTime: next.inTime,
-        outTime: next.outTime,
+        inTime: next.inTime ?? "",
+        outTime: next.outTime ?? "",
         isTripleDay: !!isTriple,
       });
 
@@ -232,11 +232,11 @@ export async function approveOt(params: {
     params.approvedDoubleMinutes != null ||
     params.approvedTripleMinutes != null;
 
-  const approvedNormalMinutes =
+  const approvedNormalMinutes: number =
     params.approvedNormalMinutes ?? existing.normalMinutes ?? 0;
-  const approvedDoubleMinutes =
+  const approvedDoubleMinutes: number =
     params.approvedDoubleMinutes ?? existing.doubleMinutes ?? 0;
-  const approvedTripleMinutes =
+  const approvedTripleMinutes: number =
     params.approvedTripleMinutes ?? existing.tripleMinutes ?? 0;
 
   const approvedTotalMinutes =
