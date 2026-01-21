@@ -40,8 +40,8 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
 
     res.cookie(env.cookieName, result.refreshToken, {
       httpOnly: true,
-      sameSite: "lax",
-      secure: env.nodeEnv === "production",
+      sameSite: "none",
+      secure: true,
       path: "/api/auth",
     });
 
