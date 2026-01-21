@@ -22,7 +22,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       httpOnly: true,
       secure: true,
       sameSite: "none",
-      path: "/api/auth/refresh",
+      path: "/api/auth",
     });
 
     res.json({ accessToken: result.accessToken, user: result.user });
@@ -42,7 +42,7 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
       httpOnly: true,
       sameSite: "lax",
       secure: env.nodeEnv === "production",
-      path: "/api/auth/refresh",
+      path: "/api/auth",
     });
 
     res.json({ accessToken: result.accessToken, user: result.user });
@@ -56,7 +56,7 @@ export async function logout(req: Request, res: Response, next: NextFunction) {
     const rt = req.cookies?.[env.cookieName];
     if (rt) await Auth.logout(rt);
 
-    res.clearCookie(env.cookieName, { path: "/api/auth/refresh" });
+    res.clearCookie(env.cookieName, { path: "/api/auth" });
     res.json({ ok: true });
   } catch (e) {
     next(e);
