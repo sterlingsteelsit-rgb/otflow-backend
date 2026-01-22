@@ -1,16 +1,53 @@
 import type { Request, Response, NextFunction } from "express";
 import { z } from "zod";
-import * as OT from "../services/ot.service.js";
 import ExcelJS from "exceljs";
+import * as OT from "../services/ot.service.js";
 import { OtEntry } from "../models/otEntry.model.js";
+import { logo } from "../assets/sterling_logo.js";
 
 type Scope = "daily" | "weekly" | "monthly" | "yearly";
 type Mode = "records" | "summary";
 
+function minToHours(min: number) {
+  return Math.round((min / 60) * 100) / 100;
+}
+
+function nz(v: number) {
+  return v === 0 ? "" : v;
+}
+
+function addBorders(ws: ExcelJS.Worksheet) {
+  ws.eachRow((row) => {
+    row.eachCell((cell) => {
+      cell.border = {
+        top: { style: "thin" },
+        left: { style: "thin" },
+        bottom: { style: "thin" },
+        right: { style: "thin" },
+      };
+    });
+  });
+}
+
+function headerRow(ws: ExcelJS.Worksheet, rowNum: number) {
+  const row = ws.getRow(rowNum);
+  row.font = { bold: true };
+  row.alignment = { horizontal: "center", vertical: "middle" };
+  row.eachCell((cell) => {
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFEFEFEF" },
+    };
+  });
+}
+
+/* -------------------- schemas -------------------- */
+
 export const logsExportSchema = z.object({
   query: z.object({
     scope: z.enum(["daily", "weekly", "monthly", "yearly"]).default("daily"),
-    anchor: z.string().min(4), // your frontend sends normalized YYYY-MM-DD
+    anchor: z.string().min(4), // normalized YYYY-MM-DD
     employeeId: z.string().optional().default(""),
     status: z
       .enum(["PENDING", "APPROVED", "REJECTED"])
@@ -41,14 +78,9 @@ export const bulkCreateSchema = z.object({
         z
           .object({
             employeeId: z.string().min(1),
-
-            // allow NO_SHIFT
-            shift: z.string().min(1),
-
-            // allow optional (only required if shift != NO_SHIFT)
+            shift: z.string().min(1), // allow NO_SHIFT
             inTime: z.string().optional(),
             outTime: z.string().optional(),
-
             reason: z.string().optional(),
           })
           .superRefine((val, ctx) => {
@@ -81,13 +113,13 @@ export const logsSchema = z.object({
     employeeId: z.string().optional(),
     status: z.string().optional(),
 
-    // if provided, used directly
+    // direct range
     from: z.string().optional(),
     to: z.string().optional(),
 
-    // OR use scope + anchor
+    // OR scope + anchor
     scope: z.enum(["daily", "weekly", "monthly", "yearly"]).optional(),
-    anchor: z.string().optional(), // YYYY-MM-DD (for daily/weekly), YYYY-MM (monthly), YYYY (yearly)
+    anchor: z.string().optional(),
 
     page: z.any().optional(),
     limit: z.any().optional(),
@@ -131,6 +163,8 @@ export const decisionSchema = z.object({
   query: z.any(),
 });
 
+/* -------------------- basic endpoints -------------------- */
+
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await OT.listOt(req.query);
@@ -141,7 +175,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 }
 
 export async function pendingCount(
-  req: Request,
+  _req: Request,
   res: Response,
   next: NextFunction,
 ) {
@@ -208,7 +242,6 @@ export async function bulkCreate(
       },
     });
 
-    console.log("bulkCreate", { workDate, rowsLen: rows?.length });
     if (!rows?.length) {
       return res
         .status(400)
@@ -249,6 +282,7 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
       approvedTripleMinutes,
     } = (req as any).parsed.body;
 
+    // ✅ IMPORTANT: service must set approvedTotalMinutes in DB.
     const updated = await OT.approveOt({
       id,
       reason,
@@ -311,6 +345,8 @@ export async function weekStats(
     next(e);
   }
 }
+
+/* -------------------- export helpers -------------------- */
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
@@ -375,11 +411,21 @@ function minutesTotal(r: any) {
   );
 }
 
+/**
+ * ✅ FIX: Use ONLY the model field approvedTotalMinutes.
+ * No fallback. No recompute. Exactly what you asked.
+ */
+function approvedTotal(r: any) {
+  return Number(r.approvedTotalMinutes ?? 0) || 0;
+}
+
 function autoWidth(ws: ExcelJS.Worksheet) {
   ws.columns?.forEach((col) => {
+    if (!col.eachCell) return;
     let max = 10;
+
     col.eachCell({ includeEmpty: true }, (cell) => {
-      const v = cell.value as any;
+      const v: any = cell.value;
       const len =
         typeof v === "string"
           ? v.length
@@ -392,9 +438,9 @@ function autoWidth(ws: ExcelJS.Worksheet) {
                 : v?.formula
                   ? 12
                   : 0;
-
       if (len > max) max = len;
     });
+
     col.width = Math.min(45, Math.max(10, max + 2));
   });
 }
@@ -408,14 +454,12 @@ function addTitleBlock(
   title: string,
   meta: Record<string, string>,
 ) {
-  // Title (merged)
   ws.mergeCells("A1", "H1");
   const t = ws.getCell("A1");
   t.value = title;
   t.font = { bold: true, size: 16 };
   t.alignment = { vertical: "middle", horizontal: "left" };
 
-  // Meta block rows
   let r = 3;
   for (const [k, v] of Object.entries(meta)) {
     ws.getCell(`A${r}`).value = k;
@@ -427,6 +471,8 @@ function addTitleBlock(
   ws.addRow([]);
 }
 
+/* -------------------- EXPORT API -------------------- */
+
 export async function logsExport(req: Request, res: Response) {
   const scope = (req.query.scope as Scope) ?? "daily";
   const anchor = String(req.query.anchor ?? "");
@@ -436,9 +482,7 @@ export async function logsExport(req: Request, res: Response) {
 
   const { from, to } = rangeFromScope(scope, anchor);
 
-  const match: any = {
-    workDate: { $gte: from, $lte: to },
-  };
+  const match: any = { workDate: { $gte: from, $lte: to } };
   if (employeeId) match.employeeId = employeeId;
   if (status) match.status = status;
 
@@ -446,13 +490,11 @@ export async function logsExport(req: Request, res: Response) {
   wb.creator = "HRMS";
   wb.created = new Date();
 
-  // -------------------- fetch records once (we can build everything from it) --------------------
   const records = await OtEntry.find(match)
     .populate("employeeId", "empId name")
     .sort({ workDate: 1, createdAt: 1 })
     .lean();
 
-  // -------------------- build computed totals --------------------
   const overall = {
     count: records.length,
     normalMinutes: 0,
@@ -494,7 +536,7 @@ export async function logsExport(req: Request, res: Response) {
     overall.doubleMinutes += dm;
     overall.tripleMinutes += tm;
     overall.totalMinutes += tot;
-    overall.approvedTotalMinutes += r.approvedTotalMinutes ?? 0;
+    overall.approvedTotalMinutes += approvedTotal(r);
 
     if (r.status === "PENDING") overall.pending += 1;
     if (r.status === "APPROVED") overall.approved += 1;
@@ -521,7 +563,7 @@ export async function logsExport(req: Request, res: Response) {
     e.doubleMinutes += dm;
     e.tripleMinutes += tm;
     e.totalMinutes += tot;
-    e.approvedTotalMinutes += r.approvedTotalMinutes ?? 0;
+    e.approvedTotalMinutes += approvedTotal(r);
     e.rows.push(r);
   }
 
@@ -534,178 +576,419 @@ export async function logsExport(req: Request, res: Response) {
     "Export Mode": mode,
   };
 
-  // -------------------- Sheet 1: SUMMARY (always included) --------------------
+  const logoBase64 = logo;
+
+  /* ---------- Helper function for styling ---------- */
+  function applyTableStyle(
+    worksheet: any,
+    startRow: number,
+    endRow: number,
+    startCol: number,
+    endCol: number,
+  ) {
+    // Header styling
+    const headerRow = worksheet.getRow(startRow);
+    headerRow.eachCell((cell: any, colNumber: number) => {
+      if (colNumber >= startCol && colNumber <= endCol) {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF2E5B9A" }, // Professional blue
+        };
+        cell.font = {
+          bold: true,
+          color: { argb: "FFFFFFFF" },
+          size: 11,
+        };
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: "center",
+          wrapText: true,
+        };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FF2E5B9A" } },
+          left: { style: "thin", color: { argb: "FF2E5B9A" } },
+          bottom: { style: "thin", color: { argb: "FF2E5B9A" } },
+          right: { style: "thin", color: { argb: "FF2E5B9A" } },
+        };
+      }
+    });
+
+    // Data rows styling
+    for (let row = startRow + 1; row <= endRow; row++) {
+      const dataRow = worksheet.getRow(row);
+      dataRow.eachCell((cell: any, colNumber: number) => {
+        if (colNumber >= startCol && colNumber <= endCol) {
+          // Alternate row coloring
+          const fillColor = row % 2 === 0 ? "FFF2F2F2" : "FFFFFFFF";
+
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: fillColor },
+          };
+          cell.font = {
+            size: 10,
+          };
+          cell.alignment = {
+            vertical: "middle",
+            horizontal: "left",
+            wrapText: true,
+          };
+          cell.border = {
+            top: { style: "thin", color: { argb: "FFD9D9D9" } },
+            left: { style: "thin", color: { argb: "FFD9D9D9" } },
+            bottom: { style: "thin", color: { argb: "FFD9D9D9" } },
+            right: { style: "thin", color: { argb: "FFD9D9D9" } },
+          };
+
+          // Center align numeric columns
+          const colLetter = worksheet.getColumn(colNumber).letter;
+          if (["D", "E", "F", "G", "H", "I"].includes(colLetter)) {
+            cell.alignment.horizontal = "center";
+          }
+        }
+      });
+    }
+  }
+
+  /* ---------- Sheet 1: SUMMARY ---------- */
   const wsSum = wb.addWorksheet("Summary");
 
-  addTitleBlock(wsSum, "Overtime Report (OT)", meta);
+  // Add logo (Row 1-3)
+  const logoId = wb.addImage({
+    base64: logoBase64,
+    extension: "png",
+  });
 
-  // Overall summary table
-  wsSum.addRow(["Overall Summary"]);
-  boldRow(wsSum, wsSum.lastRow!.number);
+  // Simplified image addition without type issues
+  wsSum.addImage(logoId, "A1:C3");
 
-  wsSum.addRow(["Records", overall.count]);
-  wsSum.addRow(["Pending", overall.pending]);
-  wsSum.addRow(["Approved", overall.approved]);
-  wsSum.addRow(["Rejected", overall.rejected]);
-  wsSum.addRow([]);
-  wsSum.addRow(["Normal (min)", overall.normalMinutes]);
-  wsSum.addRow(["Double (min)", overall.doubleMinutes]);
-  wsSum.addRow(["Triple (min)", overall.tripleMinutes]);
-  wsSum.addRow(["Total (min)", overall.totalMinutes]);
-  wsSum.addRow(["Approved Total (min)", overall.approvedTotalMinutes]);
+  // Title block with styling
+  wsSum.mergeCells("D1", "H2");
+  const titleCell = wsSum.getCell("D1");
+  titleCell.value = "OVERTIME REPORT - SUMMARY";
+  titleCell.font = {
+    bold: true,
+    size: 16,
+    color: { argb: "FF2E5B9A" },
+  };
+  titleCell.alignment = {
+    vertical: "middle",
+    horizontal: "center",
+  };
 
-  wsSum.addRow([]);
-  wsSum.addRow(["Employee-wise Summary"]);
-  boldRow(wsSum, wsSum.lastRow!.number);
+  // Add metadata block
+  let metaRow = 4;
+  for (const [key, value] of Object.entries(meta)) {
+    const keyCell = wsSum.getCell(`A${metaRow}`);
+    keyCell.value = key;
+    keyCell.font = { bold: true, size: 10 };
 
-  wsSum.addRow([
-    "Emp ID",
-    "Employee Name",
-    "Count",
-    "Normal (min)",
-    "Double (min)",
-    "Triple (min)",
-    "Total (min)",
-    "Approved (min)",
-  ]);
-  boldRow(wsSum, wsSum.lastRow!.number);
+    const valueCell = wsSum.getCell(`B${metaRow}`);
+    valueCell.value = value;
+    valueCell.font = { size: 10 };
+    metaRow++;
+  }
+
+  // Add empty row
+  metaRow++;
+
+  // Overall Summary
+  const overallStartRow = metaRow;
+  wsSum.mergeCells(`A${overallStartRow}`, `C${overallStartRow}`);
+  const overallTitleCell = wsSum.getCell(`A${overallStartRow}`);
+  overallTitleCell.value = "OVERALL SUMMARY";
+  overallTitleCell.font = {
+    bold: true,
+    size: 12,
+    color: { argb: "FF2E5B9A" },
+  };
+
+  const overallDataStart = overallStartRow + 1;
+  wsSum.getCell(`A${overallDataStart}`).value = "Records";
+  wsSum.getCell(`B${overallDataStart}`).value = overall.count;
+
+  wsSum.getCell(`A${overallDataStart + 1}`).value = "Pending";
+  wsSum.getCell(`B${overallDataStart + 1}`).value = overall.pending;
+
+  wsSum.getCell(`A${overallDataStart + 2}`).value = "Approved";
+  wsSum.getCell(`B${overallDataStart + 2}`).value = overall.approved;
+
+  wsSum.getCell(`A${overallDataStart + 3}`).value = "Rejected";
+  wsSum.getCell(`B${overallDataStart + 3}`).value = overall.rejected;
+
+  wsSum.getCell(`A${overallDataStart + 5}`).value = "Normal";
+  wsSum.getCell(`B${overallDataStart + 5}`).value = nz(
+    minToHours(overall.normalMinutes),
+  );
+
+  wsSum.getCell(`A${overallDataStart + 6}`).value = "Double";
+  wsSum.getCell(`B${overallDataStart + 6}`).value = nz(
+    minToHours(overall.doubleMinutes),
+  );
+
+  wsSum.getCell(`A${overallDataStart + 7}`).value = "Triple";
+  wsSum.getCell(`B${overallDataStart + 7}`).value = nz(
+    minToHours(overall.tripleMinutes),
+  );
+
+  wsSum.getCell(`A${overallDataStart + 8}`).value = "Total";
+  wsSum.getCell(`B${overallDataStart + 8}`).value = nz(
+    minToHours(overall.totalMinutes),
+  );
+
+  wsSum.getCell(`A${overallDataStart + 9}`).value = "Approved Total";
+  wsSum.getCell(`B${overallDataStart + 9}`).value = nz(
+    minToHours(overall.approvedTotalMinutes),
+  );
+
+  // Style overall summary
+  for (let i = 0; i <= 9; i++) {
+    const rowNum = overallDataStart + i;
+    wsSum.getCell(`A${rowNum}`).font = { bold: true, size: 10 };
+    const bCell = wsSum.getCell(`B${rowNum}`);
+    bCell.font = { size: 10 };
+    bCell.alignment = { horizontal: "right" };
+  }
+
+  // Employee-wise Summary
+  const empStartRow = overallStartRow + 12;
+  wsSum.mergeCells(`A${empStartRow}`, `H${empStartRow}`);
+  const empTitleCell = wsSum.getCell(`A${empStartRow}`);
+  empTitleCell.value = "EMPLOYEE-WISE SUMMARY";
+  empTitleCell.font = {
+    bold: true,
+    size: 12,
+    color: { argb: "FF2E5B9A" },
+  };
+  empTitleCell.alignment = { horizontal: "center" };
+
+  // Employee table headers
+  const headerRowNum = empStartRow + 1;
+  wsSum.getCell(`A${headerRowNum}`).value = "Emp ID";
+  wsSum.getCell(`B${headerRowNum}`).value = "Employee Name";
+  wsSum.getCell(`C${headerRowNum}`).value = "Count";
+  wsSum.getCell(`D${headerRowNum}`).value = "Normal (Hrs)";
+  wsSum.getCell(`E${headerRowNum}`).value = "Double (Hrs)";
+  wsSum.getCell(`F${headerRowNum}`).value = "Triple (Hrs)";
+  wsSum.getCell(`G${headerRowNum}`).value = "Total (Hrs)";
+  wsSum.getCell(`H${headerRowNum}`).value = "Approved (Hrs)";
 
   const empList = Array.from(byEmployee.values()).sort((a, b) =>
     (a.empId || "").localeCompare(b.empId || ""),
   );
 
+  // Add employee data
+  let dataRow = headerRowNum + 1;
   for (const e of empList) {
-    wsSum.addRow([
-      e.empId,
-      e.name,
-      e.count,
-      e.normalMinutes,
-      e.doubleMinutes,
-      e.tripleMinutes,
-      e.totalMinutes,
-      e.approvedTotalMinutes,
-    ]);
+    wsSum.getCell(`A${dataRow}`).value = e.empId;
+    wsSum.getCell(`B${dataRow}`).value = e.name;
+    wsSum.getCell(`C${dataRow}`).value = e.count;
+    wsSum.getCell(`D${dataRow}`).value = nz(minToHours(e.normalMinutes));
+    wsSum.getCell(`E${dataRow}`).value = nz(minToHours(e.doubleMinutes));
+    wsSum.getCell(`F${dataRow}`).value = nz(minToHours(e.tripleMinutes));
+    wsSum.getCell(`G${dataRow}`).value = nz(minToHours(e.totalMinutes));
+    wsSum.getCell(`H${dataRow}`).value = nz(minToHours(e.approvedTotalMinutes));
+    dataRow++;
   }
 
-  wsSum.views = [{ state: "frozen", ySplit: 6 }];
+  // Apply table styling to employee summary
+  applyTableStyle(wsSum, headerRowNum, dataRow - 1, 1, 8);
+
+  // Auto width for all columns
   autoWidth(wsSum);
 
-  // -------------------- Sheet 2: RECORDS (daily flat; weekly/monthly/yearly employee-wise blocks) --------------------
+  // Set column widths specifically
+  wsSum.getColumn(1).width = 12;
+  wsSum.getColumn(2).width = 25;
+  wsSum.getColumn(3).width = 8;
+  wsSum.getColumn(4).width = 12;
+  wsSum.getColumn(5).width = 12;
+  wsSum.getColumn(6).width = 12;
+  wsSum.getColumn(7).width = 12;
+  wsSum.getColumn(8).width = 12;
+
+  /* ---------- Sheet 2: RECORDS ---------- */
   const wsRec = wb.addWorksheet(
     mode === "summary" ? "Records (Detailed)" : "Records",
   );
 
-  addTitleBlock(wsRec, "OT Records", meta);
+  // Add logo to records sheet too
+  wsRec.addImage(logoId, "A1:C3");
 
-  const isEmployeeWise = scope !== "daily"; // ✅ weekly/monthly/yearly employee-wise
+  // Title for records sheet
+  wsRec.mergeCells("D1", "H2");
+  const recTitleCell = wsRec.getCell("D1");
+  recTitleCell.value = "OVERTIME RECORDS - DETAILED";
+  recTitleCell.font = {
+    bold: true,
+    size: 16,
+    color: { argb: "FF2E5B9A" },
+  };
+  recTitleCell.alignment = {
+    vertical: "middle",
+    horizontal: "center",
+  };
+
+  // Add metadata to records sheet
+  let recMetaRow = 4;
+  for (const [key, value] of Object.entries(meta)) {
+    const keyCell = wsRec.getCell(`A${recMetaRow}`);
+    keyCell.value = key;
+    keyCell.font = { bold: true, size: 10 };
+
+    const valueCell = wsRec.getCell(`B${recMetaRow}`);
+    valueCell.value = value;
+    valueCell.font = { size: 10 };
+    recMetaRow++;
+  }
+
+  recMetaRow++; // Empty row
+
+  const isEmployeeWise = scope !== "daily";
 
   if (!isEmployeeWise) {
-    // ---------- DAILY (flat list) ----------
-    wsRec.addRow([
-      "Work Date",
-      "Emp ID",
-      "Employee",
-      "Shift",
-      "In",
-      "Out",
-      "Normal (min)",
-      "Double (min)",
-      "Triple (min)",
-      "Total (min)",
-      "Approved (min)",
-      "Status",
-    ]);
-    boldRow(wsRec, wsRec.lastRow!.number);
+    // Headers for non-employee-wise view
+    const headersStart = recMetaRow;
+    wsRec.getCell(`A${headersStart}`).value = "Work Date";
+    wsRec.getCell(`B${headersStart}`).value = "Emp ID";
+    wsRec.getCell(`C${headersStart}`).value = "Employee";
+    wsRec.getCell(`D${headersStart}`).value = "Shift";
+    wsRec.getCell(`E${headersStart}`).value = "In Time";
+    wsRec.getCell(`F${headersStart}`).value = "Out Time";
+    wsRec.getCell(`G${headersStart}`).value = "Normal (Hrs)";
+    wsRec.getCell(`H${headersStart}`).value = "Double (Hrs)";
+    wsRec.getCell(`I${headersStart}`).value = "Triple (Hrs)";
+    wsRec.getCell(`J${headersStart}`).value = "Total (Hrs)";
+    wsRec.getCell(`K${headersStart}`).value = "Approved (Hrs)";
+    wsRec.getCell(`L${headersStart}`).value = "Status";
 
+    // Add records data
+    let dataRowNum = headersStart + 1;
     for (const r of records) {
       const emp: any = r.employeeId ?? {};
-      wsRec.addRow([
-        r.workDate,
-        emp.empId ?? "",
-        emp.name ?? "",
-        r.shift ?? "",
-        r.inTime ?? "",
-        r.outTime ?? "",
-        r.normalMinutes ?? 0,
-        r.doubleMinutes ?? 0,
-        r.tripleMinutes ?? 0,
-        minutesTotal(r),
-        r.approvedTotalMinutes ?? 0,
-        r.status ?? "",
-      ]);
+      wsRec.getCell(`A${dataRowNum}`).value = r.workDate;
+      wsRec.getCell(`B${dataRowNum}`).value = emp.empId ?? "";
+      wsRec.getCell(`C${dataRowNum}`).value = emp.name ?? "";
+      wsRec.getCell(`D${dataRowNum}`).value = r.shift ?? "";
+      wsRec.getCell(`E${dataRowNum}`).value = r.inTime ?? "";
+      wsRec.getCell(`F${dataRowNum}`).value = r.outTime ?? "";
+      wsRec.getCell(`G${dataRowNum}`).value = nz(
+        minToHours(r.normalMinutes ?? 0),
+      );
+      wsRec.getCell(`H${dataRowNum}`).value = nz(
+        minToHours(r.doubleMinutes ?? 0),
+      );
+      wsRec.getCell(`I${dataRowNum}`).value = nz(
+        minToHours(r.tripleMinutes ?? 0),
+      );
+      wsRec.getCell(`J${dataRowNum}`).value = nz(minToHours(minutesTotal(r)));
+      wsRec.getCell(`K${dataRowNum}`).value = nz(minToHours(approvedTotal(r)));
+      wsRec.getCell(`L${dataRowNum}`).value = r.status ?? "";
+      dataRowNum++;
     }
 
-    wsRec.autoFilter = {
-      from: { row: wsRec.lastRow!.number - records.length, column: 1 },
-      to: { row: wsRec.lastRow!.number - records.length, column: 12 },
-    };
+    // Apply table styling
+    applyTableStyle(wsRec, headersStart, dataRowNum - 1, 1, 12);
   } else {
-    // ---------- WEEKLY / MONTHLY / YEARLY (employee-wise blocks) ----------
+    // Employee-wise grouping
+    let currentRow = recMetaRow;
+
     for (const e of empList) {
-      // Section header (merged)
-      const startRow = wsRec.lastRow ? wsRec.lastRow.number + 1 : 1;
-      wsRec.addRow([`Employee: ${e.empId} - ${e.name}`]);
-      wsRec.mergeCells(`A${startRow}`, `L${startRow}`);
-      wsRec.getCell(`A${startRow}`).font = { bold: true, size: 12 };
-      wsRec.getCell(`A${startRow}`).alignment = {
-        vertical: "middle",
-        horizontal: "left",
+      // Employee header
+      wsRec.mergeCells(`A${currentRow}`, `L${currentRow}`);
+      const empHeader = wsRec.getCell(`A${currentRow}`);
+      empHeader.value = `EMPLOYEE: ${e.empId} - ${e.name}`;
+      empHeader.font = {
+        bold: true,
+        size: 12,
+        color: { argb: "FF2E5B9A" },
       };
+      empHeader.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFE8F0FE" },
+      };
+      empHeader.alignment = {
+        vertical: "middle",
+        horizontal: "center",
+      };
+      currentRow++;
 
-      // Column header for this employee
-      wsRec.addRow([
-        "Work Date",
-        "Shift",
-        "In",
-        "Out",
-        "Normal (min)",
-        "Double (min)",
-        "Triple (min)",
-        "Total (min)",
-        "Approved (min)",
-        "Status",
-      ]);
-      boldRow(wsRec, wsRec.lastRow!.number);
+      // Sub-headers
+      const subHeadersStart = currentRow;
+      wsRec.getCell(`A${subHeadersStart}`).value = "Work Date";
+      wsRec.getCell(`B${subHeadersStart}`).value = "Shift";
+      wsRec.getCell(`C${subHeadersStart}`).value = "In Time";
+      wsRec.getCell(`D${subHeadersStart}`).value = "Out Time";
+      wsRec.getCell(`E${subHeadersStart}`).value = "Normal (Hrs)";
+      wsRec.getCell(`F${subHeadersStart}`).value = "Double (Hrs)";
+      wsRec.getCell(`G${subHeadersStart}`).value = "Triple (Hrs)";
+      wsRec.getCell(`H${subHeadersStart}`).value = "Total (Hrs)";
+      wsRec.getCell(`I${subHeadersStart}`).value = "Approved (Hrs)";
+      wsRec.getCell(`J${subHeadersStart}`).value = "Status";
+      currentRow++;
 
-      // Rows for employee
+      // Add employee records
+      const dataStartRow = currentRow;
       for (const r of e.rows) {
-        wsRec.addRow([
-          r.workDate,
-          r.shift ?? "",
-          r.inTime ?? "",
-          r.outTime ?? "",
-          r.normalMinutes ?? 0,
-          r.doubleMinutes ?? 0,
-          r.tripleMinutes ?? 0,
-          minutesTotal(r),
-          r.approvedTotalMinutes ?? 0,
-          r.status ?? "",
-        ]);
+        wsRec.getCell(`A${currentRow}`).value = r.workDate;
+        wsRec.getCell(`B${currentRow}`).value = r.shift ?? "";
+        wsRec.getCell(`C${currentRow}`).value = r.inTime ?? "";
+        wsRec.getCell(`D${currentRow}`).value = r.outTime ?? "";
+        wsRec.getCell(`E${currentRow}`).value = nz(
+          minToHours(r.normalMinutes ?? 0),
+        );
+        wsRec.getCell(`F${currentRow}`).value = nz(
+          minToHours(r.doubleMinutes ?? 0),
+        );
+        wsRec.getCell(`G${currentRow}`).value = nz(
+          minToHours(r.tripleMinutes ?? 0),
+        );
+        wsRec.getCell(`H${currentRow}`).value = nz(minToHours(minutesTotal(r)));
+        wsRec.getCell(`I${currentRow}`).value = nz(
+          minToHours(approvedTotal(r)),
+        );
+        wsRec.getCell(`J${currentRow}`).value = r.status ?? "";
+        currentRow++;
       }
 
       // Subtotal row
-      wsRec.addRow([
-        "",
-        "",
-        "",
-        "SUBTOTAL:",
-        e.normalMinutes,
-        e.doubleMinutes,
-        e.tripleMinutes,
-        e.totalMinutes,
-        e.approvedTotalMinutes,
-        "",
-      ]);
-      const subRow = wsRec.lastRow!.number;
-      wsRec.getRow(subRow).font = { bold: true };
-      wsRec.addRow([]); // spacing
+      const subtotalCell = wsRec.getCell(`D${currentRow}`);
+      subtotalCell.value = "SUBTOTAL:";
+      subtotalCell.font = { bold: true };
+      wsRec.getCell(`E${currentRow}`).value = nz(minToHours(e.normalMinutes));
+      wsRec.getCell(`F${currentRow}`).value = nz(minToHours(e.doubleMinutes));
+      wsRec.getCell(`G${currentRow}`).value = nz(minToHours(e.tripleMinutes));
+      wsRec.getCell(`H${currentRow}`).value = nz(minToHours(e.totalMinutes));
+      wsRec.getCell(`I${currentRow}`).value = nz(
+        minToHours(e.approvedTotalMinutes),
+      );
+
+      // Style the subtotal row
+      const subtotalRow = wsRec.getRow(currentRow);
+      subtotalRow.eachCell((cell: any) => {
+        if (cell.value) {
+          cell.font = { bold: true };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF2F8FF" },
+          };
+        }
+      });
+
+      currentRow += 2; // Add spacing between employees
+
+      // Apply table styling for this employee's section
+      applyTableStyle(wsRec, subHeadersStart, currentRow - 3, 1, 10);
     }
   }
 
-  wsRec.views = [{ state: "frozen", ySplit: 6 }];
+  // Auto width for records sheet
   autoWidth(wsRec);
 
-  // -------------------- file + stream --------------------
   const filename = safeFileName(`ot_${scope}_${from}_to_${to}_${mode}.xlsx`);
 
   res.setHeader(

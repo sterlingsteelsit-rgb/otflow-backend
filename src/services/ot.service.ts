@@ -214,81 +214,6 @@ export async function updateOt(params: {
   return updated;
 }
 
-export async function approveOt(params: {
-  id: string;
-  reason?: string;
-  actorUserId: string;
-  approvedNormalMinutes?: number;
-  approvedDoubleMinutes?: number;
-  approvedTripleMinutes?: number;
-  meta?: any;
-}) {
-  const existing = await OtEntry.findById(params.id).lean();
-  if (!existing) throw new HttpError(404, "OT entry not found");
-  if (existing.status !== "PENDING")
-    throw new HttpError(409, "Already decided");
-
-  const hasOverride =
-    params.approvedNormalMinutes != null ||
-    params.approvedDoubleMinutes != null ||
-    params.approvedTripleMinutes != null;
-
-  const approvedNormalMinutes: number =
-    params.approvedNormalMinutes ?? existing.normalMinutes ?? 0;
-  const approvedDoubleMinutes: number =
-    params.approvedDoubleMinutes ?? existing.doubleMinutes ?? 0;
-  const approvedTripleMinutes: number =
-    params.approvedTripleMinutes ?? existing.tripleMinutes ?? 0;
-
-  const approvedTotalMinutes =
-    approvedNormalMinutes + approvedDoubleMinutes + approvedTripleMinutes;
-
-  const updated = await OtEntry.findByIdAndUpdate(
-    params.id,
-    {
-      status: "APPROVED",
-      decisionReason: params.reason,
-      decidedBy: params.actorUserId,
-      decidedAt: new Date(),
-      updatedBy: params.actorUserId,
-
-      approvedNormalMinutes,
-      approvedDoubleMinutes,
-      approvedTripleMinutes,
-      approvedTotalMinutes,
-      isApprovedOverride: hasOverride,
-    },
-    { new: true },
-  ).lean();
-
-  await writeAudit({
-    entityType: "OT",
-    entityId: params.id,
-    action: "APPROVE",
-    actorUserId: params.actorUserId,
-    diff: {
-      before: {
-        status: "PENDING",
-        normalMinutes: existing.normalMinutes,
-        doubleMinutes: existing.doubleMinutes,
-        tripleMinutes: existing.tripleMinutes,
-      },
-      after: {
-        status: "APPROVED",
-        decisionReason: params.reason,
-        approvedNormalMinutes,
-        approvedDoubleMinutes,
-        approvedTripleMinutes,
-        approvedTotalMinutes,
-        isApprovedOverride: hasOverride,
-      },
-    },
-    meta: params.meta,
-  });
-
-  return updated;
-}
-
 export async function rejectOt(params: {
   id: string;
   reason: string;
@@ -581,4 +506,46 @@ export async function logsSummary(query: any) {
   ]);
 
   return { from, to, scope, items: agg };
+}
+
+export async function approveOt(params: {
+  id: string;
+  reason?: string;
+  actorUserId: string;
+  approvedNormalMinutes?: number;
+  approvedDoubleMinutes?: number;
+  approvedTripleMinutes?: number;
+  meta?: any;
+}) {
+  const doc = await OtEntry.findById(params.id);
+  if (!doc) {
+    // throw new ApiError(404, "OT entry not found");
+    throw new Error("OT entry not found");
+  }
+
+  // keep old values if caller didn't send (so UI can approve without changing)
+  const an = params.approvedNormalMinutes ?? doc.approvedNormalMinutes ?? 0;
+  const ad = params.approvedDoubleMinutes ?? doc.approvedDoubleMinutes ?? 0;
+  const at = params.approvedTripleMinutes ?? doc.approvedTripleMinutes ?? 0;
+
+  const approvedTotalMinutes =
+    (Number(an) || 0) + (Number(ad) || 0) + (Number(at) || 0);
+
+  doc.approvedNormalMinutes = Number(an) || 0;
+  doc.approvedDoubleMinutes = Number(ad) || 0;
+  doc.approvedTripleMinutes = Number(at) || 0;
+
+  // ✅ THIS is what your export needs
+  doc.approvedTotalMinutes = approvedTotalMinutes;
+
+  doc.status = "APPROVED";
+  doc.decisionReason = params.reason?.trim() ? params.reason.trim() : undefined;
+  doc.decidedBy = params.actorUserId as any;
+  doc.decidedAt = new Date();
+
+  doc.isApprovedOverride = true;
+  doc.updatedBy = params.actorUserId as any;
+
+  await doc.save();
+  return doc.toObject();
 }
