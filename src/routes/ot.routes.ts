@@ -21,6 +21,30 @@ otRouter.get(
 );
 
 otRouter.get(
+  "/logs",
+  requireAuth,
+  requirePermission("ot.read"),
+  validate(OT.logsSchema),
+  OT.logs,
+);
+
+otRouter.get(
+  "/logs/summary",
+  requireAuth,
+  requirePermission("ot.stats.read"),
+  validate(OT.logsSummarySchema),
+  OT.logsSummary,
+);
+
+otRouter.get(
+  "/logs/export",
+  requireAuth,
+  requirePermission("ot.read"),
+  validate(OT.logsExportSchema),
+  OT.logsExport,
+);
+
+otRouter.get(
   "/",
   requireAuth,
   requirePermission("ot.read"),

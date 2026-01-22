@@ -4,6 +4,7 @@ import { OtEntry } from "../models/otEntry.model.js";
 import { TripleOtDay } from "../models/tripleOtDay.model.js";
 import { calcOtMinutes } from "../utils/otCalc.js";
 import { writeAudit } from "./audit.service.js";
+import mongoose from "mongoose";
 
 function minutesToHours(min: number) {
   return Math.round((min / 60) * 100) / 100; // 2 decimals
@@ -415,4 +416,169 @@ export async function weekStats(from: string, to: string) {
   return Object.values(map).sort((a: any, b: any) =>
     a.date.localeCompare(b.date),
   );
+}
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+// WorkDate is stored as "YYYY-MM-DD" string, so string compare works.
+function monthRange(yyyyMM: string) {
+  const [y, m] = yyyyMM.split("-").map(Number);
+  const start = `${y}-${pad2(m)}-01`;
+  const nextMonth = m === 12 ? `${y + 1}-01-01` : `${y}-${pad2(m + 1)}-01`;
+  // inclusive end => take day before nextMonth
+  const endDate = new Date(nextMonth + "T00:00:00Z");
+  endDate.setUTCDate(endDate.getUTCDate() - 1);
+  const end = `${endDate.getUTCFullYear()}-${pad2(endDate.getUTCMonth() + 1)}-${pad2(
+    endDate.getUTCDate(),
+  )}`;
+  return { from: start, to: end };
+}
+
+function yearRange(yyyy: string) {
+  return { from: `${yyyy}-01-01`, to: `${yyyy}-12-31` };
+}
+
+function weekRangeFromAnchor(anchorYYYYMMDD: string) {
+  // Monday-Sunday (UTC)
+  const d = new Date(anchorYYYYMMDD + "T00:00:00Z");
+  const day = d.getUTCDay(); // 0 Sun ... 6 Sat
+  const diffToMon = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + diffToMon);
+  const from = `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+  const d2 = new Date(d);
+  d2.setUTCDate(d2.getUTCDate() + 6);
+  const to = `${d2.getUTCFullYear()}-${pad2(d2.getUTCMonth() + 1)}-${pad2(d2.getUTCDate())}`;
+  return { from, to };
+}
+
+function resolveRange(query: any) {
+  // If from/to provided, use them
+  if (query.from || query.to) {
+    return {
+      from: query.from ? String(query.from) : "0000-01-01",
+      to: query.to ? String(query.to) : "9999-12-31",
+    };
+  }
+
+  const scope = String(query.scope || "daily");
+  const anchor = String(query.anchor || "");
+
+  // Defaults if no anchor:
+  // - daily/weekly: today
+  // - monthly: current YYYY-MM
+  // - yearly: current YYYY
+  const now = new Date();
+  const today = `${now.getUTCFullYear()}-${pad2(now.getUTCMonth() + 1)}-${pad2(now.getUTCDate())}`;
+  const curMonth = `${now.getUTCFullYear()}-${pad2(now.getUTCMonth() + 1)}`;
+  const curYear = `${now.getUTCFullYear()}`;
+
+  if (scope === "daily") {
+    const d = anchor && anchor.length >= 10 ? anchor : today;
+    return { from: d, to: d };
+  }
+  if (scope === "weekly") {
+    const d = anchor && anchor.length >= 10 ? anchor : today;
+    return weekRangeFromAnchor(d);
+  }
+  if (scope === "monthly") {
+    const m = anchor && anchor.length >= 7 ? anchor : curMonth;
+    return monthRange(m);
+  }
+  if (scope === "yearly") {
+    const y = anchor && anchor.length >= 4 ? anchor : curYear;
+    return yearRange(y);
+  }
+  return { from: "0000-01-01", to: "9999-12-31" };
+}
+
+export async function logs(query: any) {
+  const { page, limit, skip } = normalizePagination(query.page, query.limit);
+  const { from, to } = resolveRange(query);
+
+  const filter: any = { workDate: { $gte: from, $lte: to } };
+  if (query.employeeId) filter.employeeId = query.employeeId;
+  if (query.status) filter.status = query.status;
+
+  const [items, total] = await Promise.all([
+    OtEntry.find(filter)
+      .populate("employeeId", "empId name")
+      .populate("createdBy", "username email")
+      .populate("updatedBy", "username email")
+      .populate("decidedBy", "username email")
+      .sort({ workDate: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    OtEntry.countDocuments(filter),
+  ]);
+
+  return { page, limit, total, from, to, items };
+}
+
+// summary grouped by period (daily/weekly/monthly/yearly)
+export async function logsSummary(query: any) {
+  const { from, to } = resolveRange(query);
+
+  const match: any = { workDate: { $gte: from, $lte: to } };
+  if (query.employeeId)
+    match.employeeId = new mongoose.Types.ObjectId(query.employeeId);
+  if (query.status) match.status = query.status;
+
+  const scope = String(query.scope || "daily");
+
+  // group key based on string slicing
+  // daily: YYYY-MM-DD (full)
+  // monthly: YYYY-MM
+  // yearly: YYYY
+  // weekly: compute ISO week key by converting workDate -> date (more work). We'll do weekly by "weekStart" via $dateTrunc.
+  if (scope === "weekly") {
+    return await OtEntry.aggregate([
+      {
+        $addFields: {
+          workDateObj: {
+            $dateFromString: { dateString: "$workDate", format: "%Y-%m-%d" },
+          },
+        },
+      },
+      { $match: match },
+      {
+        $group: {
+          _id: {
+            $dateTrunc: {
+              date: "$workDateObj",
+              unit: "week",
+              startOfWeek: "Mon",
+            },
+          },
+          count: { $sum: 1 },
+          normalMinutes: { $sum: "$normalMinutes" },
+          doubleMinutes: { $sum: "$doubleMinutes" },
+          tripleMinutes: { $sum: "$tripleMinutes" },
+          approvedTotalMinutes: { $sum: "$approvedTotalMinutes" },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+  }
+
+  const sliceLen = scope === "yearly" ? 4 : scope === "monthly" ? 7 : 10;
+
+  const agg = await OtEntry.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: { $substrBytes: ["$workDate", 0, sliceLen] },
+        count: { $sum: 1 },
+        normalMinutes: { $sum: "$normalMinutes" },
+        doubleMinutes: { $sum: "$doubleMinutes" },
+        tripleMinutes: { $sum: "$tripleMinutes" },
+        approvedTotalMinutes: { $sum: "$approvedTotalMinutes" },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+
+  return { from, to, scope, items: agg };
 }
