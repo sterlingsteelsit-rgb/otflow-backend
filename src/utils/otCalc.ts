@@ -6,11 +6,13 @@ function toMinutes(hhmm: string) {
 }
 
 function minutesDiff(start: number, end: number) {
-  if (end < start) return end + 24 * 60 - start; // cross midnight
+  // If out time is "smaller", it means it crossed midnight
+  if (end < start) return end + 24 * 60 - start;
   return end - start;
 }
 
 function dayTypeFromDate(dateYYYYMMDD: string): DayType {
+  // Use UTC to keep it stable for YYYY-MM-DD inputs
   const d = new Date(dateYYYYMMDD + "T00:00:00Z");
   const day = d.getUTCDay();
   if (day === 0) return "SUNDAY";
@@ -35,29 +37,20 @@ function floorTo15(mins: number) {
   return Math.floor(mins / 15) * 15;
 }
 
-// OPTIONAL break rule (REMOVE if you don't want it)
-const BREAK_DEDUCT_MIN = 60; // 1 hour
-const BREAK_APPLIES_AT_MIN = 6 * 60; // if OT/work >= 6h
-
-function applyBreakDeduction(mins: number) {
-  if (mins >= BREAK_APPLIES_AT_MIN) return Math.max(0, mins - BREAK_DEDUCT_MIN);
-  return mins;
-}
-
 export function calcOtMinutes(params: {
   workDate: string; // YYYY-MM-DD
   shift: string;
-  inTime: string;
-  outTime: string;
+  inTime: string; // "HH:MM"
+  outTime: string; // "HH:MM"
   isTripleDay: boolean;
 }) {
   const inMin = toMinutes(params.inTime);
   const outMin = toMinutes(params.outTime);
 
-  // adjusted out time for midnight crossing
+  // Adjust out time for midnight crossing (so comparisons work)
   const outAdjusted = outMin < inMin ? outMin + 24 * 60 : outMin;
 
-  // Night flag: true only at 21:01+
+  // Night flag: true only if out time goes beyond 21:00
   const NIGHT_START = 21 * 60; // 21:00
   const isNight = outAdjusted > NIGHT_START;
 
@@ -65,7 +58,7 @@ export function calcOtMinutes(params: {
 
   // TRIPLE day: all worked is TRIPLE
   if (params.isTripleDay) {
-    const triple = floorTo15(applyBreakDeduction(rawWorked));
+    const triple = floorTo15(rawWorked);
     return {
       normalMinutes: 0,
       doubleMinutes: 0,
@@ -78,8 +71,13 @@ export function calcOtMinutes(params: {
 
   // SUNDAY: all worked is DOUBLE
   if (dayType === "SUNDAY") {
-    const dbl = floorTo15(applyBreakDeduction(rawWorked));
-    return { normalMinutes: 0, doubleMinutes: dbl, tripleMinutes: 0, isNight };
+    const dbl = floorTo15(rawWorked);
+    return {
+      normalMinutes: 0,
+      doubleMinutes: dbl,
+      tripleMinutes: 0,
+      isNight,
+    };
   }
 
   const st = shiftType(params.shift);
@@ -99,7 +97,7 @@ export function calcOtMinutes(params: {
   const start = Math.max(inMin, otStart);
   const rawOt = Math.max(0, outAdjusted - start);
 
-  const normalOt = floorTo15(applyBreakDeduction(rawOt));
+  const normalOt = floorTo15(rawOt);
 
   // WEEKDAY + SATURDAY: normal only
   return {

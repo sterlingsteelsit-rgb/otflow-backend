@@ -14,13 +14,14 @@ export const loginSchema = z.object({
 });
 
 export async function login(req: Request, res: Response, next: NextFunction) {
+  const isProd = env.nodeEnv === "production";
   try {
     const { email, password } = (req as any).parsed.body;
     const result = await Auth.login(email, password);
 
     res.cookie(env.cookieName, result.refreshToken, {
       httpOnly: true,
-      secure: true,
+      secure: isProd,
       sameSite: "none",
       path: "/api/auth",
     });
@@ -32,6 +33,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
 }
 
 export async function refresh(req: Request, res: Response, next: NextFunction) {
+  const isProd = env.nodeEnv === "production";
   try {
     const rt = req.cookies?.[env.cookieName];
     if (!rt) throw new HttpError(401, "Missing refresh token");
@@ -40,8 +42,8 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
 
     res.cookie(env.cookieName, result.refreshToken, {
       httpOnly: true,
+      secure: isProd,
       sameSite: "none",
-      secure: true,
       path: "/api/auth",
     });
 
