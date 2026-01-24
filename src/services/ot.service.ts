@@ -517,13 +517,13 @@ export async function approveOt(params: {
   approvedTripleMinutes?: number;
   meta?: any;
 }) {
-  const doc = await OtEntry.findById(params.id);
-  if (!doc) {
-    // throw new ApiError(404, "OT entry not found");
-    throw new Error("OT entry not found");
-  }
+  const before = await OtEntry.findById(params.id).lean();
+  if (!before) throw new Error("OT entry not found");
+  if (before.status !== "PENDING") throw new HttpError(409, "Already decided");
 
-  // keep old values if caller didn't send (so UI can approve without changing)
+  const doc = await OtEntry.findById(params.id);
+  if (!doc) throw new Error("OT entry not found");
+
   const an = params.approvedNormalMinutes ?? doc.approvedNormalMinutes ?? 0;
   const ad = params.approvedDoubleMinutes ?? doc.approvedDoubleMinutes ?? 0;
   const at = params.approvedTripleMinutes ?? doc.approvedTripleMinutes ?? 0;
@@ -534,18 +534,42 @@ export async function approveOt(params: {
   doc.approvedNormalMinutes = Number(an) || 0;
   doc.approvedDoubleMinutes = Number(ad) || 0;
   doc.approvedTripleMinutes = Number(at) || 0;
-
-  // ✅ THIS is what your export needs
   doc.approvedTotalMinutes = approvedTotalMinutes;
 
   doc.status = "APPROVED";
   doc.decisionReason = params.reason?.trim() ? params.reason.trim() : undefined;
   doc.decidedBy = params.actorUserId as any;
   doc.decidedAt = new Date();
-
   doc.isApprovedOverride = true;
   doc.updatedBy = params.actorUserId as any;
 
   await doc.save();
+
+  await writeAudit({
+    entityType: "OT",
+    entityId: params.id,
+    action: "APPROVE",
+    actorUserId: params.actorUserId,
+    diff: {
+      before: {
+        status: before.status,
+        decisionReason: before.decisionReason,
+        approvedNormalMinutes: before.approvedNormalMinutes,
+        approvedDoubleMinutes: before.approvedDoubleMinutes,
+        approvedTripleMinutes: before.approvedTripleMinutes,
+        approvedTotalMinutes: before.approvedTotalMinutes,
+      },
+      after: {
+        status: "APPROVED",
+        decisionReason: doc.decisionReason,
+        approvedNormalMinutes: doc.approvedNormalMinutes,
+        approvedDoubleMinutes: doc.approvedDoubleMinutes,
+        approvedTripleMinutes: doc.approvedTripleMinutes,
+        approvedTotalMinutes: doc.approvedTotalMinutes,
+      },
+    },
+    meta: params.meta,
+  });
+
   return doc.toObject();
 }
