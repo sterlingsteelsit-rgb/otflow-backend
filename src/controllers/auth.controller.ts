@@ -1,4 +1,4 @@
-import type { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction, CookieOptions } from "express";
 import { z } from "zod";
 import { env } from "../configs/env.js";
 import * as Auth from "../services/auth.service.js";
@@ -14,18 +14,20 @@ export const loginSchema = z.object({
 });
 
 export async function login(req: Request, res: Response, next: NextFunction) {
-  const isProd = env.nodeEnv === "production";
   try {
     const { email, password } = (req as any).parsed.body;
     const result = await Auth.login(email, password);
 
-    res.cookie(env.cookieName, result.refreshToken, {
+    const isProd = env.nodeEnv === "production";
+
+    const cookieOptions: CookieOptions = {
       httpOnly: true,
       secure: isProd,
-      sameSite: "none",
+      sameSite: isProd ? "none" : "lax",
       path: "/api/auth",
-    });
+    };
 
+    res.cookie(env.cookieName, result.refreshToken, cookieOptions);
     res.json({ accessToken: result.accessToken, user: result.user });
   } catch (e) {
     next(e);
@@ -33,20 +35,21 @@ export async function login(req: Request, res: Response, next: NextFunction) {
 }
 
 export async function refresh(req: Request, res: Response, next: NextFunction) {
-  const isProd = env.nodeEnv === "production";
   try {
     const rt = req.cookies?.[env.cookieName];
     if (!rt) throw new HttpError(401, "Missing refresh token");
 
     const result = await Auth.refresh(rt);
+    const isProd = env.nodeEnv === "production";
 
-    res.cookie(env.cookieName, result.refreshToken, {
+    const cookieOptions: CookieOptions = {
       httpOnly: true,
       secure: isProd,
-      sameSite: "none",
+      sameSite: isProd ? "none" : "lax",
       path: "/api/auth",
-    });
+    };
 
+    res.cookie(env.cookieName, result.refreshToken, cookieOptions);
     res.json({ accessToken: result.accessToken, user: result.user });
   } catch (e) {
     next(e);
