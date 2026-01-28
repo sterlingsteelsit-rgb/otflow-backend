@@ -16,32 +16,6 @@ function nz(v: number) {
   return v === 0 ? "" : v;
 }
 
-function addBorders(ws: ExcelJS.Worksheet) {
-  ws.eachRow((row) => {
-    row.eachCell((cell) => {
-      cell.border = {
-        top: { style: "thin" },
-        left: { style: "thin" },
-        bottom: { style: "thin" },
-        right: { style: "thin" },
-      };
-    });
-  });
-}
-
-function headerRow(ws: ExcelJS.Worksheet, rowNum: number) {
-  const row = ws.getRow(rowNum);
-  row.font = { bold: true };
-  row.alignment = { horizontal: "center", vertical: "middle" };
-  row.eachCell((cell) => {
-    cell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FFEFEFEF" },
-    };
-  });
-}
-
 /* -------------------- schemas -------------------- */
 
 export const logsExportSchema = z.object({

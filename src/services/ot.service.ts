@@ -379,21 +379,14 @@ function weekRangeFromAnchor(anchorYYYYMMDD: string) {
 }
 
 function resolveRange(query: any) {
-  // If from/to provided, use them
   if (query.from || query.to) {
     return {
       from: query.from ? String(query.from) : "0000-01-01",
       to: query.to ? String(query.to) : "9999-12-31",
     };
   }
-
   const scope = String(query.scope || "daily");
   const anchor = String(query.anchor || "");
-
-  // Defaults if no anchor:
-  // - daily/weekly: today
-  // - monthly: current YYYY-MM
-  // - yearly: current YYYY
   const now = new Date();
   const today = `${now.getUTCFullYear()}-${pad2(now.getUTCMonth() + 1)}-${pad2(now.getUTCDate())}`;
   const curMonth = `${now.getUTCFullYear()}-${pad2(now.getUTCMonth() + 1)}`;
@@ -408,11 +401,11 @@ function resolveRange(query: any) {
     return weekRangeFromAnchor(d);
   }
   if (scope === "monthly") {
-    const m = anchor && anchor.length >= 7 ? anchor : curMonth;
+    const m = anchor && anchor.length >= 7 ? anchor.slice(0, 7) : curMonth;
     return monthRange(m);
   }
   if (scope === "yearly") {
-    const y = anchor && anchor.length >= 4 ? anchor : curYear;
+    const y = anchor && anchor.length >= 4 ? anchor.slice(0, 4) : curMonth;
     return yearRange(y);
   }
   return { from: "0000-01-01", to: "9999-12-31" };
