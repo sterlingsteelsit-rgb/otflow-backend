@@ -7,6 +7,7 @@ import { otRouter } from "./ot.routes.js";
 import { tripleOtRouter } from "./tripleOt.routes.js";
 import { auditRouter } from "./audit.routes.js";
 import { decisionReasonRouter } from "./decisionReason.routes.js";
+import { fingerprintRouter } from "./fingerprint.routes.js";
 
 export const apiRouter = Router();
 
@@ -18,3 +19,4 @@ apiRouter.use("/ot", otRouter);
 apiRouter.use("/triple-ot", tripleOtRouter);
 apiRouter.use("/audit", auditRouter);
 apiRouter.use("/decision-reasons", decisionReasonRouter);
+apiRouter.use("/fingerprint", fingerprintRouter);

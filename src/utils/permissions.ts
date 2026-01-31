@@ -44,6 +44,9 @@ export const PERMISSIONS = [
 
   // Audit
   "audit.read",
+
+  // Fingerprint
+  "fingerprint.process",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
