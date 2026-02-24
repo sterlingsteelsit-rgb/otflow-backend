@@ -1,11 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
-import { z } from "zod";
+import { string, z } from "zod";
 import ExcelJS from "exceljs";
 import * as OT from "../services/ot.service.js";
 import { OtEntry } from "../models/otEntry.model.js";
 import { logo } from "../assets/sterling_logo.js";
 
-type Scope = "daily" | "weekly" | "monthly" | "yearly";
+type Scope = "daily" | "weekly" | "monthly" | "yearly" | "custom";
 type Mode = "records" | "summary";
 
 function minToHours(min: number) {
@@ -20,8 +20,17 @@ function nz(v: number) {
 
 export const logsExportSchema = z.object({
   query: z.object({
-    scope: z.enum(["daily", "weekly", "monthly", "yearly"]).default("daily"),
-    anchor: z.string().min(4), // normalized YYYY-MM-DD
+    scope: z
+      .enum(["daily", "weekly", "monthly", "yearly", "custom"])
+      .default("daily"),
+
+    // anchor required for non-custom, optional for custom
+    anchor: z.string().optional(),
+
+    // custom range
+    from: z.string().optional(),
+    to: z.string().optional(),
+
     employeeId: z.string().optional().default(""),
     status: z
       .enum(["PENDING", "APPROVED", "REJECTED"])
@@ -92,7 +101,9 @@ export const logsSchema = z.object({
     to: z.string().optional(),
 
     // OR scope + anchor
-    scope: z.enum(["daily", "weekly", "monthly", "yearly"]).optional(),
+    scope: z
+      .enum(["daily", "weekly", "monthly", "yearly", "custom"])
+      .optional(),
     anchor: z.string().optional(),
 
     page: z.any().optional(),
@@ -108,7 +119,9 @@ export const logsSummarySchema = z.object({
     status: z.string().optional(),
     from: z.string().optional(),
     to: z.string().optional(),
-    scope: z.enum(["daily", "weekly", "monthly", "yearly"]).default("daily"),
+    scope: z
+      .enum(["daily", "weekly", "monthly", "yearly", "custom"])
+      .default("daily"),
     anchor: z.string().optional(),
   }),
   body: z.any(),
@@ -349,13 +362,35 @@ function lastDayOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth() + 1, 0);
 }
 
-function rangeFromScope(scope: Scope, anchor: string) {
+function rangeFromScope(
+  scope: Scope,
+  anchor: string,
+  fromQ?: string,
+  toQ?: string,
+) {
+  // handle custom FIRST (no anchor needed)
+  if (scope === "custom") {
+    const from = String(fromQ ?? "").slice(0, 10);
+    const to = String(toQ ?? "").slice(0, 10);
+
+    if (!from || !to) throw new Error("Custom range requires from and to");
+
+    const f = from <= to ? from : to;
+    const t = from <= to ? to : from;
+
+    return { from: f, to: t };
+  }
+
+  // non-custom MUST have anchor
+  if (!anchor || anchor.length < 10) {
+    throw new Error("anchor is required for non-custom scope");
+  }
+
   const a = parseYYYYMMDD(anchor);
 
   if (scope === "daily") {
-    const from = anchor.slice(0, 10);
-    const to = anchor.slice(0, 10);
-    return { from, to };
+    const d = anchor.slice(0, 10);
+    return { from: d, to: d };
   }
 
   if (scope === "weekly") {
@@ -370,6 +405,7 @@ function rangeFromScope(scope: Scope, anchor: string) {
     return { from: toYYYYMMDD(ms), to: toYYYYMMDD(me) };
   }
 
+  // yearly
   const ys = new Date(a.getFullYear(), 0, 1);
   const ye = new Date(a.getFullYear(), 11, 31);
   return { from: toYYYYMMDD(ys), to: toYYYYMMDD(ye) };
@@ -450,11 +486,14 @@ function addTitleBlock(
 export async function logsExport(req: Request, res: Response) {
   const scope = (req.query.scope as Scope) ?? "daily";
   const anchor = String(req.query.anchor ?? "");
+  const fromQ = String(req.query.from ?? "");
+  const toQ = String(req.query.to ?? "");
+
+  const { from, to } = rangeFromScope(scope, anchor, fromQ, toQ);
+
   const employeeId = String(req.query.employeeId ?? "");
   const status = String(req.query.status ?? "");
   const mode = (String(req.query.mode ?? "records") as Mode) ?? "records";
-
-  const { from, to } = rangeFromScope(scope, anchor);
 
   const match: any = { workDate: { $gte: from, $lte: to } };
   if (employeeId) match.employeeId = employeeId;
@@ -963,7 +1002,10 @@ export async function logsExport(req: Request, res: Response) {
   // Auto width for records sheet
   autoWidth(wsRec);
 
-  const filename = safeFileName(`ot_${scope}_${from}_to_${to}_${mode}.xlsx`);
+  const filename =
+    scope === "custom"
+      ? safeFileName(`ot_custom_${from}_to_${to}_${mode}.xlsx`)
+      : safeFileName(`ot_${scope}_${from}_to_${to}_${mode}.xlsx`);
 
   res.setHeader(
     "Content-Type",
