@@ -8,7 +8,7 @@ import { errorMiddleware } from "./middleware/error.middleware.js";
 
 export function createApp() {
   const app = express();
-  let setDelay = false;
+  let setDelay = true;
 
   if (process.env.NODE_ENV === "development" && setDelay) {
     console.log("Development mode: Enabling artificial delay of 3s");

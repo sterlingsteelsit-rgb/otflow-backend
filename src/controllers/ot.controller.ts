@@ -875,7 +875,8 @@ export async function logsExport(req: Request, res: Response) {
     wsRec.getCell(`I${headersStart}`).value = "Triple (Hrs)";
     wsRec.getCell(`J${headersStart}`).value = "Total (Hrs)";
     wsRec.getCell(`K${headersStart}`).value = "Approved (Hrs)";
-    wsRec.getCell(`L${headersStart}`).value = "Status";
+    wsRec.getCell(`L${headersStart}`).value = "Decision Reason";
+    wsRec.getCell(`M${headersStart}`).value = "Status";
 
     // Add records data
     let dataRowNum = headersStart + 1;
@@ -898,12 +899,13 @@ export async function logsExport(req: Request, res: Response) {
       );
       wsRec.getCell(`J${dataRowNum}`).value = nz(minToHours(minutesTotal(r)));
       wsRec.getCell(`K${dataRowNum}`).value = nz(minToHours(approvedTotal(r)));
-      wsRec.getCell(`L${dataRowNum}`).value = r.status ?? "";
+      wsRec.getCell(`L${dataRowNum}`).value = r.decisionReason ?? "";
+      wsRec.getCell(`M${dataRowNum}`).value = r.status ?? "";
       dataRowNum++;
     }
 
     // Apply table styling
-    applyTableStyle(wsRec, headersStart, dataRowNum - 1, 1, 12);
+    applyTableStyle(wsRec, headersStart, dataRowNum - 1, 1, 13);
   } else {
     // Employee-wise grouping
     let currentRow = recMetaRow;
@@ -930,6 +932,7 @@ export async function logsExport(req: Request, res: Response) {
       currentRow++;
 
       // Sub-headers
+      // Sub-headers
       const subHeadersStart = currentRow;
       wsRec.getCell(`A${subHeadersStart}`).value = "Work Date";
       wsRec.getCell(`B${subHeadersStart}`).value = "Shift";
@@ -941,10 +944,12 @@ export async function logsExport(req: Request, res: Response) {
       wsRec.getCell(`H${subHeadersStart}`).value = "Total (Hrs)";
       wsRec.getCell(`I${subHeadersStart}`).value = "Approved (Hrs)";
       wsRec.getCell(`J${subHeadersStart}`).value = "Status";
+      wsRec.getCell(`K${subHeadersStart}`).value = "Decision Reason";
       currentRow++;
 
       // Add employee records
       const dataStartRow = currentRow;
+      // Add employee records
       for (const r of e.rows) {
         wsRec.getCell(`A${currentRow}`).value = r.workDate;
         wsRec.getCell(`B${currentRow}`).value = r.shift ?? "";
@@ -964,6 +969,7 @@ export async function logsExport(req: Request, res: Response) {
           minToHours(approvedTotal(r)),
         );
         wsRec.getCell(`J${currentRow}`).value = r.status ?? "";
+        wsRec.getCell(`K${currentRow}`).value = r.decisionReason ?? "";
         currentRow++;
       }
 
@@ -995,7 +1001,7 @@ export async function logsExport(req: Request, res: Response) {
       currentRow += 2; // Add spacing between employees
 
       // Apply table styling for this employee's section
-      applyTableStyle(wsRec, subHeadersStart, currentRow - 3, 1, 10);
+      applyTableStyle(wsRec, subHeadersStart, currentRow - 3, 1, 11);
     }
   }
 
