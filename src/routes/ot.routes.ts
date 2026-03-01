@@ -14,6 +14,13 @@ otRouter.get(
 );
 
 otRouter.get(
+  "/week-completeness",
+  requireAuth,
+  requirePermission("ot.read"),
+  OT.weekCompleteness,
+);
+
+otRouter.get(
   "/notifications/count",
   requireAuth,
   requirePermission("ot.approve"),

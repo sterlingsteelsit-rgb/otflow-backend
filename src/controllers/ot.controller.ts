@@ -333,6 +333,26 @@ export async function weekStats(
   }
 }
 
+export async function weekCompleteness(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const from = String(req.query.from);
+    const to = String(req.query.to);
+
+    if (!from || !to) {
+      return res.status(400).json({ message: "from and to are required" });
+    }
+
+    const items = await OT.weekCompleteness(from, to);
+    res.json({ items });
+  } catch (e) {
+    next(e);
+  }
+}
+
 /* -------------------- export helpers -------------------- */
 
 function pad(n: number) {
@@ -457,28 +477,6 @@ function autoWidth(ws: ExcelJS.Worksheet) {
 
 function boldRow(ws: ExcelJS.Worksheet, rowNum: number) {
   ws.getRow(rowNum).font = { bold: true };
-}
-
-function addTitleBlock(
-  ws: ExcelJS.Worksheet,
-  title: string,
-  meta: Record<string, string>,
-) {
-  ws.mergeCells("A1", "H1");
-  const t = ws.getCell("A1");
-  t.value = title;
-  t.font = { bold: true, size: 16 };
-  t.alignment = { vertical: "middle", horizontal: "left" };
-
-  let r = 3;
-  for (const [k, v] of Object.entries(meta)) {
-    ws.getCell(`A${r}`).value = k;
-    ws.getCell(`A${r}`).font = { bold: true };
-    ws.getCell(`B${r}`).value = v;
-    r++;
-  }
-
-  ws.addRow([]);
 }
 
 /* -------------------- EXPORT API -------------------- */

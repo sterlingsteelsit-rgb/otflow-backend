@@ -43,6 +43,64 @@ export async function pendingCount() {
   return { pending };
 }
 
+export async function weekCompleteness(from: string, to: string) {
+  // Note: workDate is YYYY-MM-DD string in your DB
+  const match: any = { workDate: { $gte: from, $lte: to } };
+
+  const items = await OtEntry.aggregate([
+    { $match: match },
+
+    // Determine whether row is "filled" like your frontend logic:
+    // - If shift == NO_SHIFT => filled
+    // - else requires inTime and outTime
+    {
+      $addFields: {
+        isFilled: {
+          $cond: [
+            { $eq: ["$shift", "NO_SHIFT"] },
+            true,
+            {
+              $and: [
+                { $gt: [{ $strLenCP: { $ifNull: ["$inTime", ""] } }, 0] },
+                { $gt: [{ $strLenCP: { $ifNull: ["$outTime", ""] } }, 0] },
+              ],
+            },
+          ],
+        },
+      },
+    },
+
+    // Keep only filled rows
+    { $match: { isFilled: true } },
+
+    // We need distinct employees per day (because one employee might have multiple rows)
+    {
+      $group: {
+        _id: { date: "$workDate", emp: "$employeeId" },
+        anyPending: {
+          $max: {
+            $cond: [{ $eq: ["$status", "PENDING"] }, 1, 0],
+          },
+        },
+      },
+    },
+
+    // Now group per day
+    {
+      $group: {
+        _id: "$_id.date",
+        filledCount: { $sum: 1 },
+        pendingCount: { $sum: "$anyPending" },
+      },
+    },
+
+    { $project: { _id: 0, date: "$_id", filledCount: 1, pendingCount: 1 } },
+    { $sort: { date: 1 } },
+  ]);
+
+  return items;
+}
+
 export async function getPendingNotifications({ limit }: { limit: number }) {
   const filter = { status: "PENDING" as const };
 

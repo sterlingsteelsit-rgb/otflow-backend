@@ -53,6 +53,7 @@ const otEntrySchema = new Schema(
 
 otEntrySchema.index({ employeeId: 1, workDate: 1 }, { unique: true });
 otEntrySchema.index({ workDate: 1, status: 1 });
+otEntrySchema.index({ workDate: 1, employeeId: 1, status: 1 });
 otEntrySchema.index({ status: 1, createdAt: -1 });
 otEntrySchema.index({ status: 1, workDate: -1, createdAt: -1 });
 otEntrySchema.index({ workDate: -1, createdAt: -1 });
