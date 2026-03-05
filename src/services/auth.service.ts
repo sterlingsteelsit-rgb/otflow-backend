@@ -35,6 +35,10 @@ export async function login(email: string, password: string) {
     expiresAt: refreshExpiryDate(),
   });
 
+  await User.findByIdAndUpdate(user._id, {
+    activeStatus: "online",
+  });
+
   const role: any = user.roleId;
   return {
     accessToken,
@@ -97,11 +101,18 @@ export async function refresh(refreshToken: string) {
 export async function logout(refreshToken: string) {
   try {
     const payload = verifyRefreshToken<{ sub: string }>(refreshToken);
+
+    const userId = payload.sub;
+
     await RefreshToken.deleteMany({
       userId: payload.sub,
       tokenHash: sha256(refreshToken),
     });
+
+    await User.findByIdAndUpdate(userId, {
+      activeStatus: "offline",
+    });
   } catch {
-    // ignore invalid token
+    throw new HttpError(401, "Invalid token");
   }
 }

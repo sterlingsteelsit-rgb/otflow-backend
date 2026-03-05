@@ -16,6 +16,12 @@ const userSchema = new Schema(
     canApprove: { type: Boolean, default: false },
 
     isActive: { type: Boolean, default: true },
+
+    activeStatus: {
+      type: String,
+      enum: ["online", "offline"],
+      default: "offline",
+    },
   },
   { timestamps: true },
 );

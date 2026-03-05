@@ -19,7 +19,7 @@ export async function listUsers(query: any) {
 
   const [items, total] = await Promise.all([
     User.find(filter)
-      .select("email username roleId canApprove isActive createdAt")
+      .select("email username roleId canApprove isActive activeStatus createdAt")
       .populate("roleId", "name permissions")
       .sort(search ? { score: { $meta: "textScore" } } : { createdAt: -1 })
       .skip(skip)

@@ -218,6 +218,12 @@ export async function bulkCreate(
   try {
     const { workDate, rows } = (req as any).parsed.body;
 
+    if (!rows?.length) {
+      return res
+        .status(400)
+        .json({ message: "No rows provided", insertedCount: 0 });
+    }
+
     const result = await OT.createBulk({
       workDate,
       rows,
@@ -228,12 +234,6 @@ export async function bulkCreate(
         route: req.originalUrl,
       },
     });
-
-    if (!rows?.length) {
-      return res
-        .status(400)
-        .json({ message: "No rows provided", insertedCount: 0 });
-    }
 
     res.status(201).json(result);
   } catch (e) {
