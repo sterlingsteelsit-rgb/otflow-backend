@@ -212,17 +212,25 @@ export async function createBulk(params: {
 
 export async function updateOt(params: {
   id: string;
-  patch: { shift?: string; inTime?: string; outTime?: string; reason?: string };
+  patch: {
+    shift?: string;
+    inTime?: string;
+    outTime?: string;
+    reason?: string;
+    normalMinutes?: number;
+    doubleMinutes?: number;
+    tripleMinutes?: number;
+    isNight?: boolean;
+  };
   actorUserId: string;
   meta?: any;
 }) {
+  if (!params.actorUserId) throw new HttpError(401, "Unauthorized");
   const existing = await OtEntry.findById(params.id).lean();
   if (!existing) throw new HttpError(404, "OT entry not found");
-  if (existing.status !== "PENDING")
+  if (existing.status !== "PENDING") {
     throw new HttpError(409, "Only pending entries can be edited");
-
-  const workDate = existing.workDate;
-  const isTriple = await TripleOtDay.exists({ date: workDate });
+  }
 
   const next = {
     shift: params.patch.shift ?? existing.shift,
@@ -233,22 +241,44 @@ export async function updateOt(params: {
 
   const isNoShift = next.shift === "NO_SHIFT";
 
-  const calc = isNoShift
-    ? { normalMinutes: 0, doubleMinutes: 0, tripleMinutes: 0, isNight: false }
-    : calcOtMinutes({
-        workDate,
-        shift: next.shift,
-        inTime: next.inTime ?? "",
-        outTime: next.outTime ?? "",
-        isTripleDay: !!isTriple,
-      });
+  let calc = {
+    normalMinutes: existing.normalMinutes ?? 0,
+    doubleMinutes: existing.doubleMinutes ?? 0,
+    tripleMinutes: existing.tripleMinutes ?? 0,
+    isNight: existing.isNight ?? false,
+  };
 
-  // (optional) if NO_SHIFT, wipe times
+  if (isNoShift) {
+    calc = {
+      normalMinutes: 0,
+      doubleMinutes: 0,
+      tripleMinutes: 0,
+      isNight: false,
+    };
+  } else {
+    calc = {
+      normalMinutes: Number(
+        params.patch.normalMinutes ?? existing.normalMinutes ?? 0,
+      ),
+      doubleMinutes: Number(
+        params.patch.doubleMinutes ?? existing.doubleMinutes ?? 0,
+      ),
+      tripleMinutes: Number(
+        params.patch.tripleMinutes ?? existing.tripleMinutes ?? 0,
+      ),
+      isNight: Boolean(params.patch.isNight ?? existing.isNight ?? false),
+    };
+  }
+
   const next2 = isNoShift ? { ...next, inTime: "", outTime: "" } : next;
 
   const updated = await OtEntry.findByIdAndUpdate(
     params.id,
-    { ...next2, ...calc, updatedBy: params.actorUserId },
+    {
+      ...next2,
+      ...calc,
+      updatedBy: params.actorUserId,
+    },
     { new: true },
   ).lean();
 
@@ -263,8 +293,15 @@ export async function updateOt(params: {
         inTime: existing.inTime,
         outTime: existing.outTime,
         reason: existing.reason,
+        normalMinutes: existing.normalMinutes,
+        doubleMinutes: existing.doubleMinutes,
+        tripleMinutes: existing.tripleMinutes,
+        isNight: existing.isNight,
       },
-      after: next,
+      after: {
+        ...next2,
+        ...calc,
+      },
     },
     meta: params.meta,
   });

@@ -135,6 +135,10 @@ export const updateSchema = z.object({
     inTime: z.string().optional(),
     outTime: z.string().optional(),
     reason: z.string().optional(),
+    normalMinutes: z.number().int().min(0).optional(),
+    doubleMinutes: z.number().int().min(0).optional(),
+    tripleMinutes: z.number().int().min(0).optional(),
+    isNight: z.boolean().optional(),
   }),
   query: z.any(),
 });
