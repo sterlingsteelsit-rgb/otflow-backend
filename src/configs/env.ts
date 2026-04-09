@@ -22,6 +22,13 @@ export const env = {
 
   cookieName: process.env.COOKIE_NAME ?? "rt",
 
+  microsoft: {
+    tenantId: process.env.M365_TENANT_ID || "",
+    clientId: process.env.M365_CLIENT_ID || "",
+    clientSecret: process.env.M365_CLIENT_SECRET || "",
+    senderEmail: process.env.M365_SENDER_EMAIL || "",
+  },
+
   seedAdminEmail: process.env.SEED_ADMIN_EMAIL ?? "admin@company.com",
   seedAdminUsername: process.env.SEED_ADMIN_USERNAME ?? "admin",
   seedAdminPassword: process.env.SEED_ADMIN_PASSWORD ?? "Admin@1234",

@@ -47,6 +47,12 @@ export const PERMISSIONS = [
 
   // Fingerprint
   "fingerprint.process",
+
+  // Email
+  "email.send",
+  "email.audit",
+  "email.templates",
+  "email.contacts"
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];

@@ -11,9 +11,12 @@
     "postinstall": "npm run build",
     "seed": "tsx src/seed.ts",
     "seed:employees": "tsx src/seeds/seed-employees.ts",
-    "seed:ot": "tsx src/seeds/seed-ot-entries.ts"
+    "seed:ot": "tsx src/seeds/seed-ot-entries.ts",
+    "seed:mail": "tsx src/seeds/seed-email-data.ts"
   },
   "dependencies": {
+    "@azure/msal-node": "^5.1.2",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
     "argon2": "^0.44.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -22,8 +25,9 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
+    "isomorphic-fetch": "^3.0.0",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.1.4",
+    "mongoose": "^9.4.1",
     "multer": "^2.0.2",
     "nanoid": "^5.1.6",
     "pino": "^10.2.0",
