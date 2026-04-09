@@ -870,16 +870,16 @@ export async function logsExport(req: Request, res: Response) {
     wsRec.getCell(`B${headersStart}`).value = "Emp ID";
     wsRec.getCell(`C${headersStart}`).value = "Employee";
     wsRec.getCell(`D${headersStart}`).value = "Shift";
-    wsRec.getCell(`E${headersStart}`).value = "In Time";
-    wsRec.getCell(`F${headersStart}`).value = "Out Time";
-    wsRec.getCell(`G${headersStart}`).value = "Normal (Hrs)";
-    wsRec.getCell(`H${headersStart}`).value = "Double (Hrs)";
-    wsRec.getCell(`I${headersStart}`).value = "Triple (Hrs)";
-    wsRec.getCell(`J${headersStart}`).value = "Total (Hrs)";
-    wsRec.getCell(`K${headersStart}`).value = "Approved (Hrs)";
-    wsRec.getCell(`L${headersStart}`).value = "Decision Reason";
-    wsRec.getCell(`M${headersStart}`).value = "Status";
-
+    wsRec.getCell(`E${headersStart}`).value = "Night";
+    wsRec.getCell(`F${headersStart}`).value = "In Time";
+    wsRec.getCell(`G${headersStart}`).value = "Out Time";
+    wsRec.getCell(`H${headersStart}`).value = "Normal (Hrs)";
+    wsRec.getCell(`I${headersStart}`).value = "Double (Hrs)";
+    wsRec.getCell(`J${headersStart}`).value = "Triple (Hrs)";
+    wsRec.getCell(`K${headersStart}`).value = "Total (Hrs)";
+    wsRec.getCell(`L${headersStart}`).value = "Approved (Hrs)";
+    wsRec.getCell(`M${headersStart}`).value = "Decision Reason";
+    wsRec.getCell(`N${headersStart}`).value = "Status";
     // Add records data
     let dataRowNum = headersStart + 1;
     for (const r of records) {
@@ -888,26 +888,27 @@ export async function logsExport(req: Request, res: Response) {
       wsRec.getCell(`B${dataRowNum}`).value = emp.empId ?? "";
       wsRec.getCell(`C${dataRowNum}`).value = emp.name ?? "";
       wsRec.getCell(`D${dataRowNum}`).value = r.shift ?? "";
-      wsRec.getCell(`E${dataRowNum}`).value = r.inTime ?? "";
-      wsRec.getCell(`F${dataRowNum}`).value = r.outTime ?? "";
-      wsRec.getCell(`G${dataRowNum}`).value = nz(
+      wsRec.getCell(`E${dataRowNum}`).value = r.isNight ? "1" : "";
+      wsRec.getCell(`F${dataRowNum}`).value = r.inTime ?? "";
+      wsRec.getCell(`G${dataRowNum}`).value = r.outTime ?? "";
+      wsRec.getCell(`H${dataRowNum}`).value = nz(
         minToHours(r.normalMinutes ?? 0),
       );
-      wsRec.getCell(`H${dataRowNum}`).value = nz(
+      wsRec.getCell(`I${dataRowNum}`).value = nz(
         minToHours(r.doubleMinutes ?? 0),
       );
-      wsRec.getCell(`I${dataRowNum}`).value = nz(
+      wsRec.getCell(`J${dataRowNum}`).value = nz(
         minToHours(r.tripleMinutes ?? 0),
       );
-      wsRec.getCell(`J${dataRowNum}`).value = nz(minToHours(minutesTotal(r)));
-      wsRec.getCell(`K${dataRowNum}`).value = nz(minToHours(approvedTotal(r)));
-      wsRec.getCell(`L${dataRowNum}`).value = r.decisionReason ?? "";
-      wsRec.getCell(`M${dataRowNum}`).value = r.status ?? "";
+      wsRec.getCell(`K${dataRowNum}`).value = nz(minToHours(minutesTotal(r)));
+      wsRec.getCell(`L${dataRowNum}`).value = nz(minToHours(approvedTotal(r)));
+      wsRec.getCell(`M${dataRowNum}`).value = r.decisionReason ?? "";
+      wsRec.getCell(`N${dataRowNum}`).value = r.status ?? "";
       dataRowNum++;
     }
 
     // Apply table styling
-    applyTableStyle(wsRec, headersStart, dataRowNum - 1, 1, 13);
+    applyTableStyle(wsRec, headersStart, dataRowNum - 1, 1, 14);
   } else {
     // Employee-wise grouping
     let currentRow = recMetaRow;
@@ -938,15 +939,16 @@ export async function logsExport(req: Request, res: Response) {
       const subHeadersStart = currentRow;
       wsRec.getCell(`A${subHeadersStart}`).value = "Work Date";
       wsRec.getCell(`B${subHeadersStart}`).value = "Shift";
-      wsRec.getCell(`C${subHeadersStart}`).value = "In Time";
-      wsRec.getCell(`D${subHeadersStart}`).value = "Out Time";
-      wsRec.getCell(`E${subHeadersStart}`).value = "Normal (Hrs)";
-      wsRec.getCell(`F${subHeadersStart}`).value = "Double (Hrs)";
-      wsRec.getCell(`G${subHeadersStart}`).value = "Triple (Hrs)";
-      wsRec.getCell(`H${subHeadersStart}`).value = "Total (Hrs)";
-      wsRec.getCell(`I${subHeadersStart}`).value = "Approved (Hrs)";
-      wsRec.getCell(`J${subHeadersStart}`).value = "Status";
-      wsRec.getCell(`K${subHeadersStart}`).value = "Decision Reason";
+      wsRec.getCell(`C${subHeadersStart}`).value = "Night";
+      wsRec.getCell(`D${subHeadersStart}`).value = "In Time";
+      wsRec.getCell(`E${subHeadersStart}`).value = "Out Time";
+      wsRec.getCell(`F${subHeadersStart}`).value = "Normal (Hrs)";
+      wsRec.getCell(`G${subHeadersStart}`).value = "Double (Hrs)";
+      wsRec.getCell(`H${subHeadersStart}`).value = "Triple (Hrs)";
+      wsRec.getCell(`I${subHeadersStart}`).value = "Total (Hrs)";
+      wsRec.getCell(`J${subHeadersStart}`).value = "Approved (Hrs)";
+      wsRec.getCell(`K${subHeadersStart}`).value = "Status";
+      wsRec.getCell(`L${subHeadersStart}`).value = "Decision Reason";
       currentRow++;
 
       // Add employee records
@@ -955,35 +957,37 @@ export async function logsExport(req: Request, res: Response) {
       for (const r of e.rows) {
         wsRec.getCell(`A${currentRow}`).value = r.workDate;
         wsRec.getCell(`B${currentRow}`).value = r.shift ?? "";
-        wsRec.getCell(`C${currentRow}`).value = r.inTime ?? "";
-        wsRec.getCell(`D${currentRow}`).value = r.outTime ?? "";
-        wsRec.getCell(`E${currentRow}`).value = nz(
+        wsRec.getCell(`C${currentRow}`).value = r.isNight ? "1" : "";
+        wsRec.getCell(`D${currentRow}`).value = r.inTime ?? "";
+        wsRec.getCell(`E${currentRow}`).value = r.outTime ?? "";
+        wsRec.getCell(`F${currentRow}`).value = nz(
           minToHours(r.normalMinutes ?? 0),
         );
-        wsRec.getCell(`F${currentRow}`).value = nz(
+        wsRec.getCell(`G${currentRow}`).value = nz(
           minToHours(r.doubleMinutes ?? 0),
         );
-        wsRec.getCell(`G${currentRow}`).value = nz(
+        wsRec.getCell(`H${currentRow}`).value = nz(
           minToHours(r.tripleMinutes ?? 0),
         );
-        wsRec.getCell(`H${currentRow}`).value = nz(minToHours(minutesTotal(r)));
-        wsRec.getCell(`I${currentRow}`).value = nz(
+        wsRec.getCell(`I${currentRow}`).value = nz(minToHours(minutesTotal(r)));
+        wsRec.getCell(`J${currentRow}`).value = nz(
           minToHours(approvedTotal(r)),
         );
-        wsRec.getCell(`J${currentRow}`).value = r.status ?? "";
-        wsRec.getCell(`K${currentRow}`).value = r.decisionReason ?? "";
+        wsRec.getCell(`K${currentRow}`).value = r.status ?? "";
+        wsRec.getCell(`L${currentRow}`).value = r.decisionReason ?? "";
         currentRow++;
       }
 
       // Subtotal row
-      const subtotalCell = wsRec.getCell(`D${currentRow}`);
+      const subtotalCell = wsRec.getCell(`E${currentRow}`);
       subtotalCell.value = "SUBTOTAL:";
       subtotalCell.font = { bold: true };
-      wsRec.getCell(`E${currentRow}`).value = nz(minToHours(e.normalMinutes));
-      wsRec.getCell(`F${currentRow}`).value = nz(minToHours(e.doubleMinutes));
-      wsRec.getCell(`G${currentRow}`).value = nz(minToHours(e.tripleMinutes));
-      wsRec.getCell(`H${currentRow}`).value = nz(minToHours(e.totalMinutes));
-      wsRec.getCell(`I${currentRow}`).value = nz(
+
+      wsRec.getCell(`F${currentRow}`).value = nz(minToHours(e.normalMinutes));
+      wsRec.getCell(`G${currentRow}`).value = nz(minToHours(e.doubleMinutes));
+      wsRec.getCell(`H${currentRow}`).value = nz(minToHours(e.tripleMinutes));
+      wsRec.getCell(`I${currentRow}`).value = nz(minToHours(e.totalMinutes));
+      wsRec.getCell(`J${currentRow}`).value = nz(
         minToHours(e.approvedTotalMinutes),
       );
 
@@ -1003,7 +1007,7 @@ export async function logsExport(req: Request, res: Response) {
       currentRow += 2; // Add spacing between employees
 
       // Apply table styling for this employee's section
-      applyTableStyle(wsRec, subHeadersStart, currentRow - 3, 1, 11);
+      applyTableStyle(wsRec, subHeadersStart, currentRow - 3, 1, 12);
     }
   }
 
