@@ -137,6 +137,12 @@ export async function createBulk(params: {
     inTime?: string;
     outTime?: string;
     reason?: string;
+
+    manualOverride?: boolean;
+    normalMinutes?: number;
+    doubleMinutes?: number;
+    tripleMinutes?: number;
+    isNight?: boolean;
   }>;
   actorUserId: string;
   meta?: any;
@@ -146,15 +152,33 @@ export async function createBulk(params: {
   const docs = params.rows.map((r) => {
     const isNoShift = r.shift === "NO_SHIFT";
 
-    const calc = isNoShift
-      ? { normalMinutes: 0, doubleMinutes: 0, tripleMinutes: 0, isNight: false }
-      : calcOtMinutes({
-          workDate: params.workDate,
-          shift: r.shift,
-          inTime: r.inTime!, // safe because zod ensures
-          outTime: r.outTime!, // safe because zod ensures
-          isTripleDay: !!isTriple,
-        });
+    const usingManual = !isNoShift && !!r.manualOverride;
+
+    let calc;
+
+    if (isNoShift) {
+      calc = {
+        normalMinutes: 0,
+        doubleMinutes: 0,
+        tripleMinutes: 0,
+        isNight: false,
+      };
+    } else if (usingManual) {
+      calc = {
+        normalMinutes: Number(r.normalMinutes ?? 0),
+        doubleMinutes: Number(r.doubleMinutes ?? 0),
+        tripleMinutes: Number(r.tripleMinutes ?? 0),
+        isNight: Boolean(r.isNight ?? false),
+      };
+    } else {
+      calc = calcOtMinutes({
+        workDate: params.workDate,
+        shift: r.shift,
+        inTime: r.inTime!,
+        outTime: r.outTime!,
+        isTripleDay: !!isTriple,
+      });
+    }
 
     return {
       employeeId: r.employeeId,

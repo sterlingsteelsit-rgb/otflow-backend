@@ -61,10 +61,16 @@ export const bulkCreateSchema = z.object({
         z
           .object({
             employeeId: z.string().min(1),
-            shift: z.string().min(1), // allow NO_SHIFT
+            shift: z.string().min(1),
             inTime: z.string().optional(),
             outTime: z.string().optional(),
             reason: z.string().optional(),
+
+            manualOverride: z.boolean().optional(),
+            normalMinutes: z.number().int().min(0).optional(),
+            doubleMinutes: z.number().int().min(0).optional(),
+            tripleMinutes: z.number().int().min(0).optional(),
+            isNight: z.boolean().optional(),
           })
           .superRefine((val, ctx) => {
             if (val.shift !== "NO_SHIFT") {

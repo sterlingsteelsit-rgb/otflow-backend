@@ -1,11 +1,11 @@
-import { FilterQuery } from "mongoose";
+import mongoose from "mongoose";
 import {
   EmailContactModel,
   IEmailContact,
 } from "../models/email-contact.model.js";
 
 export async function getEmailContacts(search?: string) {
-  const query: FilterQuery<IEmailContact> = {
+  const query: mongoose.QueryFilter<IEmailContact> = {
     isActive: true,
   };
 

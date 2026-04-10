@@ -45,6 +45,7 @@ const otEntrySchema = new Schema(
     decidedBy: { type: Schema.Types.ObjectId, ref: "User", required: false },
     decidedAt: { type: Date, required: false },
 
+    manualOverride: { type: Boolean, default: false },
     createdBy: { type: Schema.Types.ObjectId, ref: "User", required: false },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User", required: false },
   },
