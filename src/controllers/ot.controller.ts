@@ -535,6 +535,7 @@ export async function logsExport(req: Request, res: Response) {
       empId: string;
       name: string;
       count: number;
+      nightCount: number;
       normalMinutes: number;
       doubleMinutes: number;
       tripleMinutes: number;
@@ -569,6 +570,7 @@ export async function logsExport(req: Request, res: Response) {
         empId: emp.empId ?? "",
         name: emp.name ?? "",
         count: 0,
+        nightCount: 0,
         normalMinutes: 0,
         doubleMinutes: 0,
         tripleMinutes: 0,
@@ -580,6 +582,9 @@ export async function logsExport(req: Request, res: Response) {
 
     const e = byEmployee.get(key)!;
     e.count += 1;
+    if (r.isNight) {
+      e.nightCount += 1;
+    }
     e.normalMinutes += nm;
     e.doubleMinutes += dm;
     e.tripleMinutes += tm;
@@ -985,6 +990,8 @@ export async function logsExport(req: Request, res: Response) {
       }
 
       // Subtotal row
+      wsRec.getCell(`C${currentRow}`).value = e.nightCount;
+
       const subtotalCell = wsRec.getCell(`E${currentRow}`);
       subtotalCell.value = "SUBTOTAL:";
       subtotalCell.font = { bold: true };
